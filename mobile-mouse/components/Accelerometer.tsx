@@ -10,23 +10,15 @@ export default function App() {
     z: 0,
   });
   const [subscription, setSubscription] = useState(null);
-  const [mouseSpeed, setMouseSpeed] = useState(0);
+  // const [mouseSpeed, setMouseSpeed] = useState(0);
 
   const _slow = () => DeviceMotion.setUpdateInterval(1000);
   const _fast = () => DeviceMotion.setUpdateInterval(16);
 
   const _subscribe = () => {
     // console.log(DeviceMotionMeasurement.acceleration)
-    // setSubscription(DeviceMotion.addListener(setData));
-    setSubscription(DeviceMotion.addListener((data) => {
-      // console.log(data.acceleration)
-      setData(data.acceleration);
-      console.log(data.acceleration.y)
-      // if (data.acceleration.x > mouseSpeed) {
-      //   setMouseSpeed(data.acceleration.x);
-      //   console.log(mouseSpeed);
-      // }
-    }))
+    setSubscription(DeviceMotion.addListener(setData));
+    // setSubscription(DeviceMotion.addListener(data))
   };
 
   const _unsubscribe = () => {
@@ -62,9 +54,12 @@ export default function App() {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
+    // flex: 1,
     justifyContent: 'center',
     paddingHorizontal: 20,
+    // borderColor: 'red',
+    borderWidth: 3,
+    margin: 0,
   },
   text: {
     textAlign: 'center',
@@ -72,7 +67,7 @@ const styles = StyleSheet.create({
   buttonContainer: {
     flexDirection: 'row',
     alignItems: 'stretch',
-    marginTop: 15,
+    // marginTop: 15,
   },
   button: {
     flex: 1,
