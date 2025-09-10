@@ -1,81 +1,660 @@
-import { Text, View, Button, TextInput, StyleSheet } from "react-native";
-import React, {useState} from 'react';
-import App from "@/components/Accelerometer";
+import { Text, View, StyleSheet, TouchableOpacity, Image, Linking, Platform } from "react-native";
+import React, {useState, useEffect, useRef} from 'react';
+import { GestureHandlerRootView, Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS, useSharedValue } from 'react-native-reanimated'; 
+import * as ScreenOrientation from 'expo-screen-orientation';
+import Modal from 'react-native-modal';
+import { Checkbox } from 'react-native-paper';
+import Slider from '@react-native-community/slider';
+// @ts-ignore
+import ReactSlider from 'react-slider';
+import { CameraView } from 'expo-camera';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Steps Needed:
-  // 1) Connect Phone to PC with bluetooth
-  // 2) Open the App
-  // 3) PC needs to confirm the app being used
-  // 4) Using Accelerometer; app becomes a mouse
-const socketConnect = (buttonColor: string, setSocket : any, socket : any) => {
-  // alert(buttonColor);
-  if (buttonColor === "red") {
-    const tempSocket = new WebSocket("ws://153.106.210.153:8765")
-    setSocket(tempSocket);
-  }
-  else {
-    socket?.close()
-  }
+// ToDo
+// ✔️Task1: Icons for Settings/QR Code
+// ✔️Task2: Option to Invert Scroll
+// ✔️Task3: Scroll/Drag Sensitivity
+// ✔️Task4: QR Code / IP address thing
+// ✔️Task5: Local Variable (to save settings)
+// ✔️Task6: Test w/ Monitor
+// ✔️Task7: Add Better TypeScript
+// Task8: Help
+// Task9: Deploy 
+// Ex1: Add a "Loading Screen"
+
+// Function to connect to WebSocket
+const socketConnect = (setSocket : React.Dispatch<React.SetStateAction<WebSocket | null>>, 
+scannedData : string | null, setScanned : any, setScannedData : any) => {
+  const address = `ws://${scannedData}:8765`;
+  const socket : WebSocket = new WebSocket(address);
+
+  socket.onopen = () => {
+    console.log('WebSocket connected');
+    setSocket(socket);
+  };
+
+  socket.onclose = (event) => {
+    console.log("WebSocket closed");
+    setScannedData(null);
+    setScanned(false);
+    socket?.close();
+    setSocket(null);
+  };
 };
 
-
-const socketTest = (userText : string, socket : any) => {
-  // Use Accelerometer or whatever here???
-
-  if (userText !== "") {
-    socket.send(userText); // Movements sent here
-  }
-  else {
+// Function to send messages to socket
+const socketSend = (userText : string, socket : WebSocket | null) => {
+  // Ensure connection is OPEN
+  if (socket?.readyState === 1) {
+    socket?.send(userText); // Movements and relevant settings are sent here
   }
 }
 
-export default function Index() {
-  const [buttonColor, setButtonColor] = useState("red");
-  const [userText, setUserText] = useState("");
-  const [socket, setSocket] = useState();
+type TrackFingerProps = {
+  data: [WebSocket | null, boolean, number, number];
+};
+
+// Function to determine trackpad behavior
+const TrackFinger = ({data} : TrackFingerProps) => {
+  const socket = data[0];
+  const checked = data[1]; // is "Invert Scroll" checked
+  const drag = data[2].toFixed(1); // drag speed
+  const scroll = data[3]; // scroll speed
+
+  const posRef = useRef({x:0,y:0}); 
+  const fingerCount = useSharedValue(0);
+  const lastTwoPosRef : any = useRef([]); // track scroll positions (two fingers)
+  const upDown = useSharedValue<number>(0); // controls dynamic scroll speed
+  const reset = useSharedValue(0); // stops position duplicates/redundancies
+
+  const handleSocketUpdate = (event : any, fingerCount : any) => {
+    // Calculate Trackpad Movements
+    posRef.current = {
+      x: Math.round(event.absoluteX),
+      y: Math.round(event.absoluteY),
+    }
+    const sendPosRef = `${posRef.current.x?.toFixed(2)}, 
+    ${posRef.current.y?.toFixed(2)}`;
+
+    // Send Drag Data (one finger)
+    if (fingerCount.value === 1){
+      socketSend(`${"drag"}, ${sendPosRef}, ${drag}, ${scroll}`, socket);
+    }
+    // Send/Track Scroll Data (two fingers)
+    else if (fingerCount.value === 2 ){
+      if (lastTwoPosRef.current.length < 2) {
+        lastTwoPosRef.current.push([
+          posRef.current.x?.toFixed(2),
+          posRef.current.y?.toFixed(2)]);
+      }
+      else {
+        if (reset.value === 1) {
+          for (let i = 0; i < 2; i++){
+            lastTwoPosRef.current.shift();
+          }
+          reset.value = 0;
+        }
+        else {
+          lastTwoPosRef.current.shift()
+          lastTwoPosRef.current.push([
+            posRef.current.x?.toFixed(2),
+            posRef.current.y?.toFixed(2)]);
+  
+          upDown.value = lastTwoPosRef.current[0][1] - lastTwoPosRef.current[1][1];
+        }
+      }
+
+      let msg;
+      if (checked) {
+        msg = `${"scroll"}, ${0}, ${upDown.value}, ${drag}, ${scroll}`;
+      }
+      else {
+        msg = `${"scroll"}, ${0}, ${(-1)*upDown.value}, ${drag}, ${scroll}`;
+      }
+
+      socketSend(`${"reset_drag"},${0},${0},${drag},${scroll}`, socket);
+      socketSend(msg, socket);
+    }
+  };
+
+  // Resets x and y tracking on Python WebSocket
+  const handleSocketEnd = () => {
+    socketSend(`${"reset_drag"},${0},${0},${drag},${scroll}`, socket);
+  };
+
+  // Gesture that controls drag and scroll
+  const panGesture = Gesture.Pan()
+    .minDistance(10)
+    .onTouchesDown((event)=>{
+      fingerCount.value = event.numberOfTouches;
+    })
+    .onTouchesUp((event)=>{
+      fingerCount.value = event.numberOfTouches;
+      upDown.value = 0;
+      reset.value = 1;
+    })
+    .onUpdate(event => {
+      try {
+        runOnJS(handleSocketUpdate)(event, fingerCount);
+      } catch (err) {
+        console.error("Error updating socket:", err);
+      }
+    })
+    .onEnd(()=>{
+      runOnJS(handleSocketEnd)();
+    });
+
+  // Tap and Long Press Gestures to handle click and right-click
+  const handleClick = () => {
+    socketSend(`${"click"},${0},${0},${drag},${scroll}`, socket);
+  }
+  const click = Gesture.Tap()
+    .maxDistance(10)
+    .onStart(() => {
+      runOnJS(handleClick)();
+    })    
+  const handleRightClick = () => {
+    socketSend(`${"right_click"},${0},${0},${drag},${scroll}`, socket);
+  }
+  const rightClick = Gesture.LongPress()
+    .minDuration(200) // Hold for at least 200ms
+    .onStart(() => {
+      runOnJS(handleRightClick)();
+    })
+
+  const handlePanRight = Gesture.Simultaneous(panGesture, rightClick)
+  const gestures = Gesture.Race(handlePanRight, click)
 
   return (
-    <View
+    <GestureDetector gesture={gestures}>
+      <View style={styles.touchScreenContainer}>
+      </View>
+    </GestureDetector>
+  )
+};
+
+export default function Index() {
+  // Socket State
+  const [socket, setSocket] = useState<WebSocket | null>(null);
+
+  // Modal States
+  const [isSettingVisible, setSettingVisible] = useState(false);
+  const [isCameraVisible, setCameraVisible] = useState(false);
+  const [isHelpVisible, setHelpVisible] = useState(false);
+  const [backdrop, setBackdrop] = useState(false);
+
+  // Setting States
+  const [checked, setChecked] = useState<boolean>(false);
+  const [dragValue, setDragValue] = useState<number>(0);
+  const [scrollValue, setScrollValue] = useState<number>(0);
+
+  // Camera States
+  const [scanned, setScanned] = useState(false);
+  const [scannedData, setScannedData] = useState<string | null>(null);
+  const [qrCodeBounds, setQrCodeBounds] : any = useState(null);
+
+  // Load Local Variables from the previous session
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const startingCheckedVal : any = await AsyncStorage.getItem("checked")
+        const startingDragVal : any = await AsyncStorage.getItem("dragValue");
+        const startingScrollVal : any = await AsyncStorage.getItem("scrollValue");
+
+        setChecked(JSON.parse(startingCheckedVal));
+        setDragValue(JSON.parse(startingDragVal));
+        setScrollValue(JSON.parse(startingScrollVal));
+      } catch (e) {
+        console.error('Failed to load settings', e);
+      }
+    };
+    loadSettings();
+  }, []);
+
+  // Set Local Variables when changes occur
+  useEffect(() => {
+    const setSetting = async () => {
+      try {
+        await AsyncStorage.setItem('checked', JSON.stringify(checked));
+        await AsyncStorage.setItem('dragValue', JSON.stringify(dragValue));
+        await AsyncStorage.setItem('scrollValue', JSON.stringify(scrollValue));
+      } catch (e) {
+        console.error('Failed to save setting', e);
+      }
+    };
+    
+    setSetting();
+  }, [checked, dragValue, scrollValue]);
+
+  // Once a qr code is scanned; attempts to connect to the WebSocket
+  useEffect(()=>{
+    if (!socket)
+      socketConnect(setSocket, scannedData, setScanned, setScannedData);
+    console.log(socket?.readyState);
+  },[scannedData, socket]);
+
+  // Cleans up QR Code Overlay
+  useEffect(() => {
+    if(qrCodeBounds){
+      const timeout = setTimeout(() => {
+        setQrCodeBounds(null); // hide the QR overlay after 2 seconds
+      }, 500);
+  
+      return () => clearTimeout(timeout); // cleanup in case it re-runs early
+    }
+  },[qrCodeBounds])
+
+  // Function to establish/display QR Code Bounds
+  const getQrCodeBounds : any = () => {
+    if (scanned && qrCodeBounds !== null){
+    
+    return(
+      <View style={
+        {position: "absolute",
+        height: qrCodeBounds?.bounds.size.height,
+        width: qrCodeBounds?.bounds.size.width,
+        top: qrCodeBounds?.bounds.origin.y, 
+        left: qrCodeBounds?.bounds.origin.x,
+        zIndex: 1,
+        borderColor: "yellow",
+        borderWidth: 3,}
+      }></View>)
+  }};
+
+  // Function to obtain QR Code data
+  const handleBarCodeScanned = (result: string) => {
+    if (!scanned) {
+      setScanned(true);
+      if (scannedData === null){
+        setScannedData(result);
+      }
+    }
+  };
+
+  // Open Relevant Modal Popup
+  const openPopup = (modal : string) => {
+    if (modal === "settings") {
+      setSettingVisible(true);
+    }
+    else if (modal === "help"){
+      setHelpVisible(true);
+    }
+    else {
+      setCameraVisible(true);
+    }
+    setBackdrop(true);
+  };
+
+  // Close Relevant Modal Popup
+  const closePopup = (modal : string) => {
+    if (modal === "settings") {
+      setSettingVisible(false);
+    }
+    else if (modal === "help") {
+      setHelpVisible(false);
+    }
+    else {
+      setCameraVisible(false);
+    }
+  };
+
+  // Control Modal Backdrop (dimming non-modal elements)
+  useEffect(() => {
+    if (!isSettingVisible || !isCameraVisible || !isHelpVisible)
+      setBackdrop(false)
+  }, [isSettingVisible, isCameraVisible, isHelpVisible]);
+
+  // Ensures screen orientation is landscape
+  useEffect(() => {
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE);
+  }, []);
+
+  return (
+    <GestureHandlerRootView
       style={{
         flex: 1,
         justifyContent: "center",
         alignItems: "center",
       }}
     >
-      <Button 
-      title={buttonColor === "lightgreen" ? "Connected!": "Not Connected!"}
-      onPress={() => {
-        buttonColor === "lightgreen" ? 
-        setButtonColor("red") : 
-        setButtonColor("lightgreen")
-        socketConnect(buttonColor, setSocket, socket);
-      }}
-      color={buttonColor}></Button>
+      {backdrop && <View style={styles.customBackdrop}>
+        <Text style={{color: "transparent"}}>Testing</Text>
+      </View>}
+      <View style={styles.container}>
+        {/* Buttons Above Trackpad */}
+        <View style={styles.buttonsContainer}>
+          <TouchableOpacity style={styles.settings}
+            onPress={()=>openPopup("settings")}>
+              <Image 
+                source={require('../assets/images/gear-icon.webp')}
+                style={styles.settingsImg}></Image>
+          </TouchableOpacity>
+          <TouchableOpacity style={{alignItems: "flex-start"}}
+            onPress={()=>openPopup("camera")}>
+            <Image 
+              source={require('../assets/images/qr-icon.png')}
+              style={styles.qrCodeHelpImg}>
+              </Image>
+          </TouchableOpacity>
+          <Text style={{flex: 1}}></Text>
+          {socket && <TouchableOpacity style={styles.connect}
+            onPress={() => {
+              setScannedData(null);
+              setScanned(false);
+              socket?.close();
+              setSocket(null);
+            }}>
+              <Text style={styles.disconnectBtn}>{"Disconnect"}</Text>
+          </TouchableOpacity>}
+          <Text style={{flex: 1}}></Text>
+          <TouchableOpacity onPress={()=>openPopup("help")} style={styles.help}>
+            <Image 
+              source={require('../assets/images/help(2).png')}
+              style={styles.qrCodeHelpImg}>
+              </Image>
+          </TouchableOpacity>
+        </View>
+        <TrackFinger data={[socket, checked, dragValue, scrollValue]}></TrackFinger>
 
-      <TextInput placeholder="Type Here..."
-        placeholderTextColor={"rgba(0,0,0,0.25)"}
-        style={styles.inputBox}
-        value={userText}
-        onChangeText={text => setUserText(text)}
-      ></TextInput>
+        {/* Settings Modal */}
+        <Modal
+          isVisible={isSettingVisible}
+          animationIn="slideInUp"
+          animationOut="slideOutDown"
+        >
+          <View style={styles.settingModalContent}>
+            <Text style={{ fontSize: 18, marginBottom: 10, fontWeight: "bold", textDecorationLine: "underline" }}>
+              Settings</Text>
+            <Text style={{ fontSize: 16, fontWeight: "bold" }}>Invert Scroll</Text>
+            <View style={styles.checkboxContainer}>
+              <Checkbox
+                status={checked ? 'checked' : 'unchecked'}
+                onPress={() => setChecked(!checked)} color="navy">
+                </Checkbox>
+            </View>
+            <Text style={{ fontSize: 16, fontWeight: "bold" }}>
+              Drag Sensitivity [{dragValue.toFixed(1) === "0.0" ? "Default" : dragValue.toFixed(1)}]</Text>
+            {/* <Slider
+              style={{ width: 300, height: 40, }}
+              minimumValue={-2}
+              maximumValue={5}
+              step={0.1}
+              value={dragValue}
+              onValueChange={setDragValue}
+              minimumTrackTintColor="#navy"
+              maximumTrackTintColor="#navy"
+              thumbTintColor="navy"
+            /> */}
+            {/* {Platform.OS !== 'web' ? (
+              <ReactSlider
+                className={styles.customSlider}
+                // style={{ width: 300, height: 40 }}
+                min={-2}
+                max={5}
+                step={0.1}
+                value={dragValue}
+                onChange={setDragValue}
+              />
+            ) : ( */}
+            <View style={{position: "relative"}}>
+              <Slider
+                style={{ width: 300, height: 40 }}
+                minimumValue={-2}
+                maximumValue={5}
+                step={0.1}
+                value={dragValue}
+                onValueChange={setDragValue}
+                minimumTrackTintColor="#navy"
+                maximumTrackTintColor="#navy"
+                thumbTintColor="navy"
+              />
+              {Platform.OS === 'web' && (
+              <Text style={styles.customSlider}> </Text>)}
+            </View>
+            {/* )} */}
 
-      <Button title="Connection Testing"
-      onPress={()=>socketTest(userText, socket)}>
+            <Text style={{ fontSize: 16, fontWeight: "bold" }}>
+              Scroll Sensitivity [{scrollValue === 0 ? "Default" : scrollValue}]</Text>
+            <View>
+              <Slider
+                style={{ width: 300, height: 40 }}
+                minimumValue={0}
+                maximumValue={5}
+                step={1}
+                value={scrollValue}
+                onValueChange={setScrollValue}
+                minimumTrackTintColor="#navy"
+                maximumTrackTintColor="#navy"
+                thumbTintColor="navy"
+              />
+              {Platform.OS === 'web' && (
+              <Text style={styles.customSlider}> </Text>)}
+            </View>
+            <TouchableOpacity onPress={() => closePopup("settings")} style={styles.button}>
+              <Text style={{ color: 'white' }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </Modal>
 
-      </Button>
-      {/* <App></App> */}
-    </View>
+        {/* Help Modal */}
+        <Modal
+          isVisible={isHelpVisible}
+          animationIn="slideInUp"
+          animationOut="slideOutDown"
+        >
+          <View style={styles.settingModalContent}>
+            <Text style={{ fontSize: 18, marginBottom: 10, fontWeight: "bold", textDecorationLine: "underline" }}>
+              Help Page</Text>
+            <Text style={{ fontSize: 18, marginBottom: 10, fontWeight: "bold"}}>Instructions</Text>
+            <Text
+              style={{ color: 'blue', textDecorationLine: 'underline' }}
+              onPress={() => Linking.openURL('https://example.com')}
+            >
+              GitHub ReadME
+            </Text>
+            <Text style={{ fontSize: 18, marginBottom: 10, fontWeight: "bold"}}>Invalid Scan?</Text>
+            <Text>Possible Reasons:</Text>
+            <Text>1 - Make sure your PC is on the same Wi-Fi as your mobile device</Text>
+            <Text>2 - Make sure to use QR Code provided by the Python WebServer</Text>
+            <Text>Note: VPN may or may not affect results</Text>
+            <TouchableOpacity onPress={() => closePopup("help")} style={styles.button}>
+              <Text style={{ color: 'white' }}>Close</Text>
+            </TouchableOpacity>
+          </View>
+        </Modal>            
+
+        {/* Camera Modal */}
+        <Modal
+          isVisible={isCameraVisible}
+          animationIn="slideInUp"
+          animationOut="slideOutDown"
+        >
+          <View style={styles.cameraModalContent}>
+            <View style={{width: "50%", height: "100%", borderWidth: 1}}>
+              <CameraView
+                style={styles.camera}
+                onBarcodeScanned={(test)=>{
+                  handleBarCodeScanned(test.data);
+                  setQrCodeBounds(test);
+                }}
+                
+                barcodeScannerSettings={{
+                  barcodeTypes: ['qr'],
+                }}
+                facing={"back"}
+              />{getQrCodeBounds()}
+            </View>
+            <View style={{flex: 1, alignItems: "center", gap: 10}}>
+              <Text style={{ fontSize: 18, fontWeight: "bold", textDecorationLine: "underline",}}>Camera</Text>
+              <Text style={{ fontSize: 16, fontWeight: "bold" }}>QR Code Scan</Text>
+              {scanned ? 
+                <Text style={{ fontSize: 16, fontWeight: "bold", color: "lightgreen" }}>Scanned</Text> :
+                <Text style={{ fontSize: 16, fontWeight: "bold", color: "red" }}>Not Scanned</Text>
+              }
+              <Text style={{ fontSize: 16, fontWeight: "bold" }}>WebSocket</Text>
+              {socket === null ?
+                <Text style={{ fontSize: 16, fontWeight: "bold", color: "red" }}>Not Connected</Text> :
+                <Text style={{ fontSize: 16, fontWeight: "bold", color: "lightgreen" }}>Connected</Text> 
+              }
+              {(socket === null && scannedData !== null) && <Text style={{ fontSize: 20, fontWeight: "bold", color: "red" }}>Invalid Scan</Text>}
+
+              <View style={{flexDirection: "row", gap: 5}}>
+              <TouchableOpacity onPress={() => {
+                setScannedData(null);
+                setScanned(false);
+                socket?.close();
+                setSocket(null);
+                }} style={styles.button}>
+                <Text style={{ color: 'white' }}>Clear Scan</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => closePopup("camera")} style={styles.button}>
+                <Text style={{ color: 'white' }}>Close</Text>
+              </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      </View>
+    </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
-  inputBox: {
-    // flex: 1,
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    // borderColor: 'red',
-    borderWidth: 3,
-    margin: 0,
-    color: 'black',
+  container: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 10,
+    marginRight: 10,
+    padding: 0,
+    width: '100%',
   },
+  buttonsContainer: {
+    flexDirection: "row",
+    width: '90%',
+    overflow: "hidden",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  touchScreenContainer: {
+    borderWidth: 3,
+    height: "70%",
+    width: "90%",
+    borderRadius: 15,
+    borderColor: "rgba(0,0,0,0.25)",
+    backgroundColor: "lightblue",
+  },
+  settings: {
+    zIndex: 1,
+  },
+  settingsImg: {
+    width: 50,       
+    height: 50,      
+  },
+  qrCodeHelpImg: {
+    width: 40,       
+    height: 40,      
+  },
+  qrCodeOutline: {
+    position: "absolute",
+    width: 10,
+    height: 10,
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1,
+    borderColor: "red",
+    borderWidth: 1,
+  },
+  connect: {
+    flex: 1,
+    paddingLeft: 10,
+    alignItems: "flex-start",
+    justifyContent: "center"
+  },
+  optionsContainer: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 10,
+    zIndex: 1,
+  },
+  settingModalContent: {
+    backgroundColor: 'white',
+    padding: 30,
+    borderRadius: 10,
+    alignItems: 'center',
+    gap: 10,
+  },
+  button: {
+    backgroundColor: '#333',
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 5,
+  },
+  customBackdrop: {
+    flex: 1,
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+    zIndex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  checkboxContainer: {
+    borderColor: "navy",
+    borderWidth: 2, 
+    borderRadius: 5,
+  },
+  camera: {
+    flex: 1,
+    // borderWidth: 1,
+  },
+  cameraModalContent: {
+    flex: 1,
+    flexDirection: "row",
+    backgroundColor: 'white',
+    // padding: 30,
+    // paddingLeft: "5%",
+    // paddingBottom: "5%",
+    // paddingTop: "5%"
+    borderRadius: 10,
+    alignItems: 'center',
+    // gap: 10,
+    // height: "100%",
+    overflow: "hidden",
+    borderWidth: 1,
+  },
+  help: {
+    alignItems: "flex-end",
+    borderWidth: 1,
+    borderColor: "black",
+    borderRadius: 20,
+  },
+  disconnectBtn: {
+    borderWidth: 1, 
+    borderColor: "red", 
+    borderRadius: 10, 
+    padding: 5 ,
+    color: "red", 
+    fontSize: 20,
+    width: "100%",
+    textAlign: "center",
+  },
+  customSlider: {
+    // width: 300, 
+    // height: 40,
+    backgroundColor: "lightgrey",
+    color: "lightgrey",
+    position: "absolute",
+    flex: 1,
+    justifyContent: "center",
+    width: "100%",
+    zIndex: -1,
+    marginTop: 10,
+    borderRadius: 10,
+  }
 });
