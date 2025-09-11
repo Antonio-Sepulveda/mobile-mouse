@@ -3,7 +3,7 @@
   "short_name": "MobileMouse",
   "start_url": "/mobile-mouse/",
   "scope": "/mobile-mouse/",
-  "display": "fullscreen",
+  "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#000000",
   "icons": [
