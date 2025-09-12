@@ -2,6 +2,7 @@
   "expo": {
     "name": "mobile-mouse",
     "slug": "mobile-mouse",
+    "owner": "antoniosepulveda",
     "version": "1.0.0",
     "orientation": "landscape",
     "icon": "./assets/images/icon.png",
@@ -9,18 +10,36 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.antoniosepulveda.mobilemouse",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "This app uses the camera to scan barcodes"
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "package": "com.antoniosepulveda.mobilemouse",
+      "permissions": ["CAMERA"]
     },
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "manifest": {
+        "name": "Mobile Mouse",
+        "short_name": "MobileMouse",
+        "theme_color": "#000000",
+        "background_color": "#ffffff",
+        "display": "standalone",
+        "orientation": "landscape",
+        "scope": "/mobile-mouse/",
+        "start_url": "/mobile-mouse/"
+      },
+      "registerServiceWorker": true
     },
     "plugins": [
       "expo-router",
@@ -38,10 +57,31 @@
         {
           "motionPermission": "Allow $(PRODUCT_NAME) to access your device motion"
         }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera",
+          "microphonePermission": "Allow $(PRODUCT_NAME) to access your microphone",
+          "recordAudioAndroid": true
+        }
       ]
     ],
     "experiments": {
-      "typedRoutes": true
+      "typedRoutes": true,
+      "baseUrl": "/mobile-mouse"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "64f51f70-4bad-4bde-b98c-8df106deaed2"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/64f51f70-4bad-4bde-b98c-8df106deaed2"
     }
   }
 }

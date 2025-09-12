@@ -6,22 +6,9 @@ import * as ScreenOrientation from 'expo-screen-orientation';
 import Modal from 'react-native-modal';
 import { Checkbox } from 'react-native-paper';
 import Slider from '@react-native-community/slider';
-// @ts-ignore
-import ReactSlider from 'react-slider';
-import { CameraView } from 'expo-camera';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// ToDo
-// ✔️Task1: Icons for Settings/QR Code
-// ✔️Task2: Option to Invert Scroll
-// ✔️Task3: Scroll/Drag Sensitivity
-// ✔️Task4: QR Code / IP address thing
-// ✔️Task5: Local Variable (to save settings)
-// ✔️Task6: Test w/ Monitor
-// ✔️Task7: Add Better TypeScript
-// Task8: Help
-// Task9: Deploy 
-// Ex1: Add a "Loading Screen"
 
 // Function to connect to WebSocket
 const socketConnect = (setSocket : React.Dispatch<React.SetStateAction<WebSocket | null>>, 
@@ -36,8 +23,6 @@ scannedData : string | null, setScanned : any, setScannedData : any) => {
 
   socket.onclose = (event) => {
     console.log("WebSocket closed");
-    setScannedData(null);
-    setScanned(false);
     socket?.close();
     setSocket(null);
   };
@@ -194,6 +179,10 @@ export default function Index() {
   const [scannedData, setScannedData] = useState<string | null>(null);
   const [qrCodeBounds, setQrCodeBounds] : any = useState(null);
 
+  // const [facing, setFacing] = useState<CameraType>('back');
+  const [permission, requestPermission] = useCameraPermissions();
+
+
   // Load Local Variables from the previous session
   useEffect(() => {
     const loadSettings = async () => {
@@ -264,6 +253,7 @@ export default function Index() {
 
   // Function to obtain QR Code data
   const handleBarCodeScanned = (result: string) => {
+    console.log("test");
     if (!scanned) {
       setScanned(true);
       if (scannedData === null){
@@ -375,28 +365,6 @@ export default function Index() {
             </View>
             <Text style={{ fontSize: 16, fontWeight: "bold" }}>
               Drag Sensitivity [{dragValue.toFixed(1) === "0.0" ? "Default" : dragValue.toFixed(1)}]</Text>
-            {/* <Slider
-              style={{ width: 300, height: 40, }}
-              minimumValue={-2}
-              maximumValue={5}
-              step={0.1}
-              value={dragValue}
-              onValueChange={setDragValue}
-              minimumTrackTintColor="#navy"
-              maximumTrackTintColor="#navy"
-              thumbTintColor="navy"
-            /> */}
-            {/* {Platform.OS !== 'web' ? (
-              <ReactSlider
-                className={styles.customSlider}
-                // style={{ width: 300, height: 40 }}
-                min={-2}
-                max={5}
-                step={0.1}
-                value={dragValue}
-                onChange={setDragValue}
-              />
-            ) : ( */}
             <View style={{position: "relative"}}>
               <Slider
                 style={{ width: 300, height: 40 }}
@@ -462,7 +430,7 @@ export default function Index() {
               <Text style={{ color: 'white' }}>Close</Text>
             </TouchableOpacity>
           </View>
-        </Modal>            
+        </Modal>
 
         {/* Camera Modal */}
         <Modal
@@ -470,6 +438,14 @@ export default function Index() {
           animationIn="slideInUp"
           animationOut="slideOutDown"
         >
+          {!permission?.granted ? 
+          <View>
+            <Text>We need your permission to show the camera</Text>
+            <TouchableOpacity onPress={requestPermission}>
+              <Text style={{borderWidth: 1}}>Grant permission</Text>
+            </TouchableOpacity>
+          </View> : 
+          
           <View style={styles.cameraModalContent}>
             <View style={{width: "50%", height: "100%", borderWidth: 1}}>
               <CameraView
@@ -483,7 +459,8 @@ export default function Index() {
                   barcodeTypes: ['qr'],
                 }}
                 facing={"back"}
-              />{getQrCodeBounds()}
+              />
+              {getQrCodeBounds()}
             </View>
             <View style={{flex: 1, alignItems: "center", gap: 10}}>
               <Text style={{ fontSize: 18, fontWeight: "bold", textDecorationLine: "underline",}}>Camera</Text>
@@ -500,12 +477,7 @@ export default function Index() {
               {(socket === null && scannedData !== null) && <Text style={{ fontSize: 20, fontWeight: "bold", color: "red" }}>Invalid Scan</Text>}
 
               <View style={{flexDirection: "row", gap: 5}}>
-              <TouchableOpacity onPress={() => {
-                setScannedData(null);
-                setScanned(false);
-                socket?.close();
-                setSocket(null);
-                }} style={styles.button}>
+              <TouchableOpacity onPress={() => {requestPermission}} style={styles.button}>
                 <Text style={{ color: 'white' }}>Clear Scan</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => closePopup("camera")} style={styles.button}>
@@ -513,7 +485,7 @@ export default function Index() {
               </TouchableOpacity>
               </View>
             </View>
-          </View>
+          </View>}
         </Modal>
       </View>
     </GestureHandlerRootView>
@@ -611,20 +583,13 @@ const styles = StyleSheet.create({
   },
   camera: {
     flex: 1,
-    // borderWidth: 1,
   },
   cameraModalContent: {
     flex: 1,
     flexDirection: "row",
     backgroundColor: 'white',
-    // padding: 30,
-    // paddingLeft: "5%",
-    // paddingBottom: "5%",
-    // paddingTop: "5%"
     borderRadius: 10,
     alignItems: 'center',
-    // gap: 10,
-    // height: "100%",
     overflow: "hidden",
     borderWidth: 1,
   },
@@ -645,8 +610,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   customSlider: {
-    // width: 300, 
-    // height: 40,
     backgroundColor: "lightgrey",
     color: "lightgrey",
     position: "absolute",

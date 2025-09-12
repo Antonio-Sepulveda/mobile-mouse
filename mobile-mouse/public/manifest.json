@@ -1,0 +1,22 @@
+{
+  "name": "Mobile Mouse",
+  "short_name": "MobileMouse",
+  "start_url": "/mobile-mouse/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "orientation": "landscape",
+  "scope": "/mobile-mouse/",
+  "icons": [
+    {
+      "src": "/mobile-mouse/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/mobile-mouse/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}
