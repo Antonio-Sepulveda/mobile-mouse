@@ -417,7 +417,7 @@ export default function Index() {
             <Text style={{ fontSize: 18, marginBottom: 10, fontWeight: "bold"}}>Instructions</Text>
             <Text
               style={{ color: 'blue', textDecorationLine: 'underline' }}
-              onPress={() => Linking.openURL('https://example.com')}
+              onPress={() => Linking.openURL('https://github.com/Antonio-Sepulveda/mobile-mouse/tree/main?tab=readme-ov-file#steps-to-use-mobilemouse')}
             >
               GitHub ReadME
             </Text>
