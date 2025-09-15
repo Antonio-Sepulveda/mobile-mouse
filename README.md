@@ -11,5 +11,5 @@ https://expo.dev/preview/update?message=&updateRuntimeVersion=1.0.0&createdAt=20
 # Getting an Invalid Scan?
 Possible Reasons:
 1) Make sure your PC is on the same Wi-Fi as your mobile device
+  (Note: VPN may or may not affect results)
 2) Make sure to use the QR provided by the Python WebServer
-Note: VPN may or may not affect results
